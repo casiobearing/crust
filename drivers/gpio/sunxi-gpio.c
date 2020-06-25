@@ -20,7 +20,7 @@
 
 #define MODE_WIDTH           4
 #define MODE_PPW             (WORD_BIT / MODE_WIDTH)
-#define MODE_REG(port, pin)  (0x0000 + 0x24 * (port) + 0x4 * (pin) / MODE_PPW)
+#define MODE_REG(port, pin)  (0x0000 + 0x24 * (port) + 4 * ((pin) / MODE_PPW))
 #define MODE_BIT(pin)        (MODE_WIDTH * ((pin) % MODE_PPW))
 
 #define DATA_WIDTH           1
@@ -30,12 +30,12 @@
 
 #define DRIVE_WIDTH          2
 #define DRIVE_PPW            (WORD_BIT / DRIVE_WIDTH)
-#define DRIVE_REG(port, pin) (0x0014 + 0x24 * (port) + 0x4 * (pin) / DRIVE_PPW)
+#define DRIVE_REG(port, pin) (0x0014 + 0x24 * (port) + 4 * ((pin) / DRIVE_PPW))
 #define DRIVE_BIT(pin)       (DRIVE_WIDTH * ((pin) % DRIVE_PPW))
 
 #define PULL_WIDTH           2
 #define PULL_PPW             (WORD_BIT / PULL_WIDTH)
-#define PULL_REG(port, pin)  (0x001c + 0x24 * (port) + 0x4 * (pin) / PULL_PPW)
+#define PULL_REG(port, pin)  (0x001c + 0x24 * (port) + 4 * ((pin) / PULL_PPW))
 #define PULL_BIT(pin)        (PULL_WIDTH * ((pin) % PULL_PPW))
 
 #define PINS_PER_PORT        32
@@ -52,11 +52,12 @@ static int
 sunxi_gpio_get_value(const struct gpio_handle *gpio, bool *value)
 {
 	const struct sunxi_gpio *self = to_sunxi_gpio(gpio->dev);
-	uint8_t port = GET_PORT(gpio);
-	uint8_t pin  = GET_PIN(gpio);
+	uint8_t port   = GET_PORT(gpio);
+	uint8_t pin    = GET_PIN(gpio);
+	uintptr_t regs = self->regs;
 
-	*value = mmio_get_bitfield_32(self->regs + DATA_REG(port),
-	                              DATA_BIT(pin), DATA_WIDTH);
+	*value = mmio_get_bitfield_32(regs + DATA_REG(port), DATA_BIT(pin),
+	                              DATA_WIDTH);
 
 	return SUCCESS;
 }
@@ -65,18 +66,19 @@ static int
 sunxi_gpio_init_pin(const struct gpio_handle *gpio)
 {
 	const struct sunxi_gpio *self = to_sunxi_gpio(gpio->dev);
-	uint8_t port = GET_PORT(gpio);
-	uint8_t pin  = GET_PIN(gpio);
+	uint8_t port   = GET_PORT(gpio);
+	uint8_t pin    = GET_PIN(gpio);
+	uintptr_t regs = self->regs;
 
 	/* Set pin function configuration (mode). */
-	mmio_set_bitfield_32(self->regs + MODE_REG(port, pin),
-	                     MODE_BIT(pin), MODE_WIDTH, gpio->mode);
+	mmio_set_bitfield_32(regs + MODE_REG(port, pin), MODE_BIT(pin),
+	                     MODE_WIDTH, gpio->mode);
 	/* Set pin drive strength. */
-	mmio_set_bitfield_32(self->regs + DRIVE_REG(port, pin),
-	                     DRIVE_BIT(pin), DRIVE_WIDTH, gpio->drive);
+	mmio_set_bitfield_32(regs + DRIVE_REG(port, pin), DRIVE_BIT(pin),
+	                     DRIVE_WIDTH, gpio->drive);
 	/* Set pin pull-up or pull-down. */
-	mmio_set_bitfield_32(self->regs + PULL_REG(port, pin),
-	                     PULL_BIT(pin), PULL_WIDTH, gpio->pull);
+	mmio_set_bitfield_32(regs + PULL_REG(port, pin), PULL_BIT(pin),
+	                     PULL_WIDTH, gpio->pull);
 
 	return SUCCESS;
 }
@@ -94,11 +96,12 @@ static int
 sunxi_gpio_set_value(const struct gpio_handle *gpio, bool value)
 {
 	const struct sunxi_gpio *self = to_sunxi_gpio(gpio->dev);
-	uint8_t port = GET_PORT(gpio);
-	uint8_t pin  = GET_PIN(gpio);
+	uint8_t port   = GET_PORT(gpio);
+	uint8_t pin    = GET_PIN(gpio);
+	uintptr_t regs = self->regs;
 
-	mmio_set_bitfield_32(self->regs + DATA_REG(port),
-	                     DATA_BIT(pin), DATA_WIDTH, value);
+	mmio_set_bitfield_32(regs + DATA_REG(port), DATA_BIT(pin),
+	                     DATA_WIDTH, value);
 
 	return SUCCESS;
 }

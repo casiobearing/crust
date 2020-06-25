@@ -11,64 +11,75 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 #include <system.h>
 #include <util.h>
 
 enum {
-	/** Replies to this command do not contain any payload data. */
-	FLAG_EMPTY_PAYLOAD = BIT(0),
 	/** Do not send a reply to this command. */
-	FLAG_NO_REPLY      = BIT(1),
+	FLAG_NO_REPLY    = BIT(0),
 	/** Reject this command from the non-secure message box channel. */
-	FLAG_SECURE_ONLY   = BIT(2),
+	FLAG_SECURE_ONLY = BIT(1),
 };
 
 struct scpi_cmd {
 	/** Handler that can process a message and create a dynamic reply. */
-	int             (*handler)(uint32_t *rx_payload, uint32_t *tx_payload,
-	                           uint16_t *tx_size);
-	/** Fixed reply payload. */
-	const uint32_t *tx_payload;
+	int     (*handler)(uint32_t *rx_payload, uint32_t *tx_payload,
+	                   uint16_t *tx_size);
 	/** Expected size of received payload. */
-	uint8_t         rx_size;
-	/** Size of fixed reply payload, if present. */
-	uint8_t         tx_size;
+	uint8_t rx_size;
 	/** Any combination of flags from above, if applicable. */
-	uint8_t         flags;
+	uint8_t flags;
 };
 
 /*
- * Handler/payload data for SCPI_CMD_GET_SCP_CAP: Get SCP capability.
+ * Handler for SCPI_CMD_SCP_READY: Response to SCP ready.
+ */
+static int
+scpi_cmd_scp_ready_handler(uint32_t *rx_payload UNUSED,
+                           uint32_t *tx_payload UNUSED,
+                           uint16_t *tx_size UNUSED)
+{
+	return SCPI_OK;
+}
+
+/*
+ * Handler for SCPI_CMD_GET_SCP_CAP: Get SCP capability.
  */
 #define SCP_FIRMWARE_VERSION(x, y, z) \
 	((((x) & 0xff) << 24) | (((y) & 0xff) << 16) | ((z) & 0xffff))
 #define SCPI_PAYLOAD_LIMITS(x, y)   (((x) & 0x01ff) << 16 | ((y) & 0x01ff))
 #define SCPI_PROTOCOL_VERSION(x, y) (((x) & 0xffff) << 16 | ((y) & 0xffff))
-
-static const uint32_t scpi_cmd_get_scp_cap_tx_payload[] = {
+static int
+scpi_cmd_get_scp_cap_handler(uint32_t *rx_payload UNUSED,
+                             uint32_t *tx_payload, uint16_t *tx_size)
+{
 	/* SCPI protocol version. */
-	SCPI_PROTOCOL_VERSION(1, 2),
+	tx_payload[0] = SCPI_PROTOCOL_VERSION(1, 2);
 	/* Payload size limits. */
-	SCPI_PAYLOAD_LIMITS(SCPI_PAYLOAD_SIZE, SCPI_PAYLOAD_SIZE),
+	tx_payload[1] = SCPI_PAYLOAD_LIMITS(SCPI_PAYLOAD_SIZE,
+	                                    SCPI_PAYLOAD_SIZE);
 	/* Firmware version. */
-	SCP_FIRMWARE_VERSION(0, 1, 9000),
+	tx_payload[2] = SCP_FIRMWARE_VERSION(0, 1, 9000);
 	/* Commands enabled 0. */
-	BIT(SCPI_CMD_SCP_READY) |
-	BIT(SCPI_CMD_GET_SCP_CAP) |
-	BIT(SCPI_CMD_SET_CSS_PWR) |
-	BIT(SCPI_CMD_GET_CSS_PWR) |
-	BIT(SCPI_CMD_SET_SYS_PWR),
+	tx_payload[3] = BIT(SCPI_CMD_SCP_READY) |
+	                BIT(SCPI_CMD_GET_SCP_CAP) |
+	                BIT(SCPI_CMD_SET_CSS_PWR) |
+	                BIT(SCPI_CMD_GET_CSS_PWR) |
+	                BIT(SCPI_CMD_SET_SYS_PWR);
 	/* Commands enabled 1. */
-	0,
+	tx_payload[4] = 0;
 	/* Commands enabled 2. */
-	0,
+	tx_payload[5] = 0;
 	/* Commands enabled 3. */
-	0,
-};
+	tx_payload[6] = 0;
+
+	*tx_size = 7 * sizeof(*tx_payload);
+
+	return SCPI_OK;
+}
 
 /*
- * Handler/payload data for SCPI_CMD_SET_CSS_PWR: Set CSS power state.
+ * Handler for SCPI_CMD_SET_CSS_PWR: Set CSS power state.
  *
  * This sets the power state of a single core, its parent cluster, and the CSS.
  *
@@ -111,7 +122,7 @@ scpi_cmd_set_css_pwr_handler(uint32_t *rx_payload,
 }
 
 /*
- * Handler/payload data for SCPI_CMD_GET_CSS_PWR: Get CSS power state.
+ * Handler for SCPI_CMD_GET_CSS_PWR: Get CSS power state.
  *
  * This gets the power states of all clusters and all cores they contain.
  */
@@ -140,7 +151,7 @@ scpi_cmd_get_css_pwr_handler(uint32_t *rx_payload UNUSED,
 }
 
 /*
- * Handler/payload data for SCPI_CMD_SET_SYS_PWR: Set system power state.
+ * Handler for SCPI_CMD_SET_SYS_PWR: Set system power state.
  */
 static int
 scpi_cmd_set_sys_power_handler(uint32_t *rx_payload,
@@ -166,11 +177,11 @@ scpi_cmd_set_sys_power_handler(uint32_t *rx_payload,
  */
 static const struct scpi_cmd scpi_cmds[] = {
 	[SCPI_CMD_SCP_READY] = {
-		.flags = FLAG_EMPTY_PAYLOAD | FLAG_NO_REPLY | FLAG_SECURE_ONLY,
+		.handler = scpi_cmd_scp_ready_handler,
+		.flags   = FLAG_NO_REPLY | FLAG_SECURE_ONLY,
 	},
 	[SCPI_CMD_GET_SCP_CAP] = {
-		.tx_payload = scpi_cmd_get_scp_cap_tx_payload,
-		.tx_size    = sizeof(scpi_cmd_get_scp_cap_tx_payload),
+		.handler = scpi_cmd_get_scp_cap_handler,
 	},
 	[SCPI_CMD_SET_CSS_PWR] = {
 		.handler = scpi_cmd_set_css_pwr_handler,
@@ -215,14 +226,6 @@ scpi_handle_cmd(uint8_t client, struct scpi_mem *mem)
 	} else if (rx_msg->size != cmd->rx_size) {
 		/* Check that the request payload matches the expected size. */
 		tx_msg->status = SCPI_E_SIZE;
-	} else if (cmd->flags & FLAG_EMPTY_PAYLOAD) {
-		/* Some reply messages do not need an additional payload. */
-		tx_msg->status = SCPI_OK;
-	} else if (cmd->tx_payload != NULL) {
-		/* Use a fixed reply payload, if present. */
-		tx_msg->size   = cmd->tx_size;
-		tx_msg->status = SCPI_OK;
-		memcpy(&tx_msg->payload, cmd->tx_payload, cmd->tx_size);
 	} else if (cmd->handler) {
 		/* Run the handler for this command to make a response. */
 		tx_msg->status = cmd->handler(rx_msg->payload, tx_msg->payload,

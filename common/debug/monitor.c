@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <system.h>
-#include <mfd/axp803.h>
+#include <mfd/axp20x.h>
 
 #define MAX_LENGTH 19 /* "m xxxxxxxx xxxxxxxx" */
 
@@ -28,6 +28,10 @@ parse_hex(const char **str, uint32_t *num)
 	/* Skip spaces. */
 	while (*s == ' ')
 		++s;
+
+	/* At least one space must precede the number. */
+	if (s == *str)
+		return false;
 
 	/* Consume as many hex digits as found. */
 	for (;;) {
@@ -53,9 +57,14 @@ parse_hex(const char **str, uint32_t *num)
 static void
 run_command(const char *cmd)
 {
-	uint32_t addr;
+	uint32_t addr, len;
 
 	switch (*cmd++) {
+	case 'd':
+		/* Hex dump: "d xxxxxxxx xxxxxxxx", arguments in bare hex. */
+		if (parse_hex(&cmd, &addr) && parse_hex(&cmd, &len))
+			hexdump(addr, len);
+		return;
 	case 'm':
 		/* MMIO: "m xxxxxxxx" or "m xxxxxxxx xxxxxxxx", bare hex. */
 		if (parse_hex(&cmd, &addr)) {
@@ -67,13 +76,16 @@ run_command(const char *cmd)
 			log("%08x: %08x\n", addr, mmio_read_32(addr));
 		}
 		return;
-#if CONFIG_DEBUG_MONITOR_PMIC
+#if CONFIG(DEBUG_MONITOR_PMIC)
 	case 'p':
 		/* PMIC: "p xx" or "p xx xx", bare hex. */
-		if (parse_hex(&cmd, &addr) && !axp803_subdevice_probe(NULL)) {
-			const struct regmap *map = &axp803.map;
+		if (parse_hex(&cmd, &addr)) {
+			const struct regmap *map = &axp20x.map;
 			uint32_t val32;
 			uint8_t  val8;
+
+			if (regmap_user_probe(map))
+				return;
 
 			if (parse_hex(&cmd, &val32))
 				regmap_write(map, addr, val32);
@@ -81,7 +93,7 @@ run_command(const char *cmd)
 			regmap_read(map, addr, &val8);
 			log("%02x: %02x\n", addr, val8);
 
-			axp803_subdevice_release(NULL);
+			regmap_user_release(map);
 		}
 		return;
 #endif
@@ -102,7 +114,7 @@ debug_monitor(void)
 {
 	unsigned char c;
 
-	if (get_system_state() != SYSTEM_INACTIVE)
+	if (system_is_running())
 		return;
 	if (!(c = serial_getc()))
 		return;

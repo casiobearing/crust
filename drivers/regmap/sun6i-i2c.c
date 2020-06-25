@@ -258,20 +258,37 @@ const struct sun6i_i2c r_i2c = {
 	},
 	.clock = { .dev = &r_ccu.dev, .id = CLK_BUS_R_I2C },
 	.pins  = {
+#if CONFIG(I2C_PINS_PL0_PL1)
 		{
 			.dev   = &r_pio.dev,
 			.id    = SUNXI_GPIO_PIN(0, 0),
 			.drive = DRIVE_10mA,
-			.mode  = IS_ENABLED(CONFIG_SOC_H5) ? 2 : 3,
+			.mode  = CONFIG(SOC_H5) ? 2 : 3,
 			.pull  = PULL_UP,
 		},
 		{
 			.dev   = &r_pio.dev,
 			.id    = SUNXI_GPIO_PIN(0, 1),
 			.drive = DRIVE_10mA,
-			.mode  = IS_ENABLED(CONFIG_SOC_H5) ? 2 : 3,
+			.mode  = CONFIG(SOC_H5) ? 2 : 3,
 			.pull  = PULL_UP,
 		},
+#elif CONFIG(I2C_PINS_PL8_PL9)
+		{
+			.dev   = &r_pio.dev,
+			.id    = SUNXI_GPIO_PIN(0, 8),
+			.drive = DRIVE_10mA,
+			.mode  = 2,
+			.pull  = PULL_UP,
+		},
+		{
+			.dev   = &r_pio.dev,
+			.id    = SUNXI_GPIO_PIN(0, 9),
+			.drive = DRIVE_10mA,
+			.mode  = 2,
+			.pull  = PULL_UP,
+		},
+#endif
 	},
 	.regs = DEV_R_I2C,
 };

@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <system.h>
 #include <util.h>
-#include <mfd/axp803.h>
+#include <mfd/axp20x.h>
 #include <platform/time.h>
 
 #define DELAY (30 * REFCLK_HZ)
@@ -20,23 +20,23 @@ static uint64_t last_tick;
 void
 debug_print_battery(void)
 {
-	const struct regmap *map = &axp803.map;
+	const struct regmap *map = &axp20x.map;
 	uint64_t now = counter_read();
 	int32_t  current, voltage;
 	uint8_t  hi, lo, val;
 
-	if (get_system_state() != SYSTEM_INACTIVE)
+	if (system_is_running())
 		return;
 
 	if (now - last_tick > DELAY) {
-		if (axp803_subdevice_probe(NULL))
+		if (regmap_user_probe(map))
 			return;
 
 		/* Battery present? */
 		if (regmap_read(map, 0x01, &val) || !(val & BIT(5)))
 			goto err_put_mfd;
 		/* Battery discharging? */
-		if (regmap_read(map, 0x00, &val) || (val & BIT(1)))
+		if (regmap_read(map, 0x00, &val) || (val & BIT(2)))
 			goto err_put_mfd;
 
 		if (regmap_read(map, 0x78, &hi))
@@ -55,7 +55,7 @@ debug_print_battery(void)
 		     (current * voltage + 500) / 1000, current, voltage);
 
 err_put_mfd:
-		axp803_subdevice_release(NULL);
+		regmap_user_release(map);
 		last_tick = now;
 	}
 }

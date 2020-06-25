@@ -7,6 +7,7 @@
 #define CCU_PRIVATE_H
 
 #include <clock.h>
+#include <intrusive.h>
 #include <stdint.h>
 #include <clock/ccu.h>
 
@@ -22,12 +23,19 @@ struct ccu_clock {
 	                                       uint32_t rate);
 	/** Byte offset of the clock configuration register. */
 	uint16_t reg;
+	/** Offset of the lock bit inside the register (valid if nonzero). */
+	uint8_t  lock;
+	/** Offset of the update bit inside the register (valid if nonzero). */
+	uint8_t  update;
 	/** Bit offset of the clock gate (valid if nonzero). */
 	uint16_t gate;
 	/** Bit offset of the module reset (valid if nonzero). */
 	uint16_t reset;
 };
 
+/*
+ * CCU helper functions
+ */
 const struct clock_handle *ccu_helper_get_parent(const struct ccu *self,
                                                  const struct ccu_clock *clk);
 
@@ -43,6 +51,15 @@ uint32_t ccu_helper_get_rate_mp(const struct ccu *self,
 uint32_t ccu_helper_get_rate_p(const struct ccu *self,
                                const struct ccu_clock *clk, uint32_t rate,
                                uint32_t p_shift, uint32_t p_width);
+
+/*
+ * CCU driver functions
+ */
+static inline const struct ccu *
+to_ccu(const struct device *dev)
+{
+	return container_of(dev, const struct ccu, dev);
+}
 
 const struct clock_handle *ccu_get_parent(const struct clock_handle *clock);
 

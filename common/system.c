@@ -69,11 +69,12 @@ system_state_machine(void)
 		system_state = SYSTEM_ACTIVE;
 
 		/* Initialize runtime devices. */
-		if ((watchdog = device_get(&r_twd.dev)))
+		if ((watchdog = device_get_or_null(&r_twd.dev)))
 			watchdog_enable(watchdog, WATCHDOG_TIMEOUT);
-		gpio = device_get(&r_pio.dev);
+		gpio = device_get_or_null(&r_pio.dev);
 
 		/* Initialize runtime services. */
+		css_init();
 		scpi_init();
 
 		/*
@@ -117,14 +118,12 @@ system_state_machine(void)
 			regulator_bulk_disable(&inactive_list);
 
 			/* Turn off all unnecessary clocks. */
-			if (gpio && !irq_is_enabled(IRQ_R_PIO_PL)) {
+			if (!irq_is_enabled(IRQ_R_PIO_PL)) {
 				device_put(gpio);
 				gpio = NULL;
 			}
-			if (watchdog) {
-				device_put(watchdog);
-				watchdog = NULL;
-			}
+			device_put(watchdog);
+			watchdog = NULL;
 
 			debug("Suspend complete!");
 
@@ -140,10 +139,10 @@ system_state_machine(void)
 			debug("Resuming...");
 
 			/* Turn on previously-disabled clocks. */
-			if ((watchdog = device_get(&r_twd.dev)))
+			if ((watchdog = device_get_or_null(&r_twd.dev)))
 				watchdog_enable(watchdog, WATCHDOG_TIMEOUT);
 			if (!gpio)
-				gpio = device_get(&r_pio.dev);
+				gpio = device_get_or_null(&r_pio.dev);
 
 			/* Turn on previously-disabled power domains. */
 
@@ -191,14 +190,12 @@ system_state_machine(void)
 			regulator_bulk_disable(&off_list);
 
 			/* Turn off all possible clocks. */
-			if (gpio && !irq_is_enabled(IRQ_R_PIO_PL)) {
+			if (!irq_is_enabled(IRQ_R_PIO_PL)) {
 				device_put(gpio);
 				gpio = NULL;
 			}
-			if (watchdog) {
-				device_put(watchdog);
-				watchdog = NULL;
-			}
+			device_put(watchdog);
+			watchdog = NULL;
 
 			/* The system is now off. */
 			system_state = SYSTEM_OFF;
@@ -215,18 +212,20 @@ system_state_machine(void)
 				device_put(pmic);
 			}
 
+			/* Continue through to resetting the SoC. */
+			fallthrough;
+		case SYSTEM_RESET:
+		default:
 			/* Turn on regulators required to boot. */
 			regulator_bulk_enable(&off_list);
 
 			/* Give regulator outputs time to rise. */
 			udelay(5000);
 
-			/* Continue through to resetting the SoC. */
-			fallthrough;
-		case SYSTEM_RESET:
-		default:
 			/* Attempt to reset the SoC using the watchdog. */
-			if (watchdog || (watchdog = device_get(&r_twd.dev)))
+			if (!watchdog)
+				watchdog = device_get_or_null(&r_twd.dev);
+			if (watchdog)
 				watchdog_enable(watchdog, 1);
 
 			/* Continue making reset attempts each iteration. */

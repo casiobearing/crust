@@ -3,7 +3,28 @@
 # SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only
 #
 
+config MFD_AXP20X
+	bool "Multi-function driver for X-Powers PMICs"
+	depends on I2C || RSB
+	help
+		This driver enables both the power sequencing and
+		voltage regulator functionality of an AXP2xx or AXP8xx
+		series power management IC.
+
+choice
+	bool "X-Powers PMIC variant"
+	depends on MFD_AXP20X
+	default MFD_AXP803 if PLATFORM_A64
+	default MFD_AXP805 if PLATFORM_H6
+
 config MFD_AXP803
-	bool
-	default y
-	depends on RSB
+	bool "AXP803"
+	help
+		This PMIC is usually paired with the A64 SoC.
+
+config MFD_AXP805
+	bool "AXP805"
+	help
+		This PMIC is usually paired with the H6 SoC.
+
+endchoice

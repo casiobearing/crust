@@ -68,6 +68,23 @@ mmio_poll_32(uintptr_t addr, uint32_t mask)
 }
 
 /**
+ * Spin until a value is present in a 32-bit MMIO register.
+ *
+ * @param addr The address of the register.
+ * @param mask The bits to check.
+ * @param val  The expected value for those bits.
+ */
+static inline void
+mmio_polleq_32(uintptr_t addr, uint32_t mask, uint32_t val)
+{
+	volatile uint32_t *ptr = (void *)addr;
+
+	while ((*ptr & mask) != val) {
+		/* Do nothing. */
+	}
+}
+
+/**
  * Spin until all bits in a mask are cleared in a 32-bit MMIO register.
  *
  * @param addr The address of the register.
@@ -115,14 +132,14 @@ mmio_set_32(uintptr_t addr, uint32_t set)
  * Write a 32-bit MMIO register.
  *
  * @param addr The address of the register.
- * @param set  The new value of the register.
+ * @param val  The new value of the register.
  */
 static inline void
-mmio_write_32(uintptr_t addr, uint32_t value)
+mmio_write_32(uintptr_t addr, uint32_t val)
 {
 	volatile uint32_t *ptr = (void *)addr;
 
-	*ptr = value;
+	*ptr = val;
 }
 
 #endif /* LIB_MMIO_H */

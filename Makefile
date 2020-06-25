@@ -7,14 +7,16 @@ SRC		 = .
 OBJ		 = build
 TGT		 = $(OBJ)/scp
 
-CROSS_COMPILE	?= or1k-linux-musl-
+BUILDAR		 = ar
+BUILDCC		 = cc
+
+HOST_COMPILE	?= aarch64-linux-musl-
+HOSTAR		 = $(HOST_COMPILE)gcc-ar
+HOSTCC		 = $(HOST_COMPILE)gcc
+
 AR		 = $(CROSS_COMPILE)gcc-ar
 CC		 = $(CROSS_COMPILE)gcc
-CPP		 = $(CROSS_COMPILE)cpp
 OBJCOPY		 = $(CROSS_COMPILE)objcopy
-
-HOSTAR		 = ar
-HOSTCC		 = cc
 
 LEX		 = lex
 YACC		 = yacc
@@ -33,15 +35,30 @@ COMMON_CFLAGS	 = -Os -pipe -std=c11 \
 		   -Werror=pointer-arith \
 		   -Werror=pointer-sign \
 		   -Werror=strict-prototypes \
+		   -Werror=undef \
 		   -Werror=vla \
 		   -Wno-missing-field-initializers
 COMMON_CPPFLAGS	 = -I$(OBJ)/include \
+		   -I$(SRC)/platform/$(CONFIG_PLATFORM)/include \
+		   -I$(SRC)/arch/$(CONFIG_ARCH)/include \
 		   -I$(SRC)/include/common \
 		   -I$(SRC)/include/lib
 
 HEADERS		 = $(OBJ)/include/config.h \
 		   $(SRC)/lib/compiler.h \
 		   $(SRC)/lib/kconfig.h
+
+BUILDCFLAGS	 = $(COMMON_CFLAGS)
+BUILDCPPFLAGS	 = $(COMMON_CPPFLAGS) \
+		   -D_XOPEN_SOURCE=700
+BUILDLDFLAGS	 =
+BUILDLDLIBS	 =
+
+HOSTCFLAGS	 = $(COMMON_CFLAGS)
+HOSTCPPFLAGS	 = $(COMMON_CPPFLAGS) \
+		   -D_XOPEN_SOURCE=700
+HOSTLDFLAGS	 =
+HOSTLDLIBS	 =
 
 AFLAGS		 = -Wa,--fatal-warnings
 CFLAGS		 = $(COMMON_CFLAGS) \
@@ -51,18 +68,16 @@ CFLAGS		 = $(COMMON_CFLAGS) \
 		   -fno-asynchronous-unwind-tables \
 		   -fno-pie \
 		   -fomit-frame-pointer \
-		   -funsigned-char \
-		   -msfimm -mshftimm -msoft-div -msoft-mul \
-		   -static
+		   -funsigned-char
 CPPFLAGS	 = $(COMMON_CPPFLAGS) \
 		   -I$(SRC)/include/drivers \
 		   -I$(SRC)/include/stdlib \
-		   -I$(SRC)/platform/$(CONFIG_PLATFORM)/include \
 		   $(foreach header,$(HEADERS),-include $(notdir $(header))) \
 		   -nostdinc \
 		   -Werror=missing-include-dirs
 LDFLAGS		 = -nostdlib \
 		   -no-pie \
+		   -static \
 		   -Wl,-O1 \
 		   -Wl,--build-id=none \
 		   -Wl,--fatal-warnings \
@@ -70,17 +85,13 @@ LDFLAGS		 = -nostdlib \
 		   -Wl,--no-dynamic-linker \
 		   -Wl,--no-undefined
 
-HOSTCFLAGS	 = $(COMMON_CFLAGS)
-HOSTCPPFLAGS	 = $(COMMON_CPPFLAGS) \
-		   -D_XOPEN_SOURCE=700
-HOSTLDFLAGS	 =
-HOSTLDLIBS	 =
-
 ###############################################################################
 
 .DEFAULT_GOAL	:= all
 GOALS		:= $(if $(MAKECMDGOALS),$(MAKECMDGOALS),$(.DEFAULT_GOAL))
 MAKEFLAGS	+= -Rr
+
+DOCS		 = $(wildcard $(SRC)/*.md $(SRC)/docs/*.md)
 
 export KCONFIG_AUTOCONFIG := $(OBJ)/include/config/auto.conf
 export KCONFIG_AUTOHEADER := $(OBJ)/include/config.h
@@ -94,14 +105,14 @@ endif
 include $(SRC)/scripts/Makefile.format
 include $(SRC)/scripts/Makefile.kbuild
 
-$(call descend,3rdparty common drivers lib tools)
+$(call descend,3rdparty arch common drivers lib tools)
 
 ###############################################################################
 
 M := @$(if $(filter-out 0,$(V)),:,exec printf '  %-7s %s\n')
 Q :=  $(if $(filter-out 0,$(V)),,@)exec
 
-all: scp $(test-all)
+all: scp tools $(test-all)
 
 check: $(test-all:%=%.test)
 
@@ -114,6 +125,8 @@ clobber:
 distclean:
 	$(Q) rm -fr $(OBJ) ..config* .config*
 
+html: $(OBJ)/docs
+
 scp: $(TGT)/scp.bin
 
 tools: $(tools-all)
@@ -124,6 +137,14 @@ tools: $(tools-all)
 	$(Q) mkdir -p $*
 
 %.d:;
+
+$(OBJ)/docs: $(OBJ)/Doxyfile $(DOCS) $(obj-all)
+	$(M) DOXYGEN $@
+	$(Q) doxygen $<
+	$(Q) touch $@
+
+$(OBJ)/Doxyfile: $(SRC)/Doxyfile
+	$(Q) sed 's|@DOCS@|$(DOCS)|g;s|@OBJ@|$(OBJ)|g;s|@SRC@|$(SRC)|g' $< > $@
 
 $(OBJ)/%.test: $(SRC)/scripts/test.sh $(OBJ)/%
 	$(M) TEST $@
@@ -168,13 +189,9 @@ $(TGT)/%.bin: $(TGT)/%.elf
 	$(M) OBJCOPY $@
 	$(Q) $(OBJCOPY) -O binary -S --reverse-bytes 4 $< $@
 
-$(TGT)/%.elf $(TGT)/%.map: $(TGT)/common/crust.ld $(obj-all) $(TGT)/lib.a
+$(TGT)/%.elf $(TGT)/%.map: $(obj-all) $(TGT)/lib.a
 	$(M) LD $@
 	$(Q) $(CC) $(CFLAGS) $(LDFLAGS) -Wl,-Map,$(TGT)/$*.map -o $@ -T $^
-
-$(TGT)/%.ld: $(SRC)/%.ld.S
-	$(M) CPP $@
-	$(Q) $(CPP) $(CPPFLAGS) -MMD -MF $@.d -MT $@ -P -o $@ $<
 
 $(TGT)/lib.a:
 	$(M) AR $@
@@ -188,9 +205,13 @@ $(TGT)/%.o: $(SRC)/%.S
 	$(M) AS $@
 	$(Q) $(CC) $(CPPFLAGS) $(AFLAGS) -MMD -c -o $@ $<
 
+$(TGT)/%.ld.o: $(SRC)/%.ld.S
+	$(M) CPP $@
+	$(Q) $(CC) $(CPPFLAGS) -E -MMD -MT $@ -P -o $@ $<
+
 $(SRC)/Makefile:;
 $(SRC)/%.h:;
 
-.PHONY: all check clean clobber distclean scp tools
+.PHONY: all check clean clobber distclean doc scp tools
 .SECONDARY:
 .SUFFIXES:

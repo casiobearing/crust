@@ -3,29 +3,18 @@
  * SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only
  */
 
-#include <regmap.h>
-#include <regulator.h>
 #include <util.h>
-#include <mfd/axp803.h>
+#include <mfd/axp20x.h>
+#include <regulator/axp20x.h>
 #include <regulator/axp803.h>
 
-#include "regulator.h"
+#include "axp20x.h"
 
 #define OUTPUT_POWER_CONTROL1 0x10
 #define OUTPUT_POWER_CONTROL2 0x12
 #define OUTPUT_POWER_CONTROL3 0x13
 
-#define GPIO_LDO_ON           0x3
-#define GPIO_LDO_OFF          0x4
-
-struct axp803_regulator_info {
-	uint8_t enable_register;
-	uint8_t enable_mask;
-	uint8_t value_register;
-	uint8_t value_mask;
-};
-
-static const struct axp803_regulator_info axp803_regulators[] = {
+static const struct axp20x_regulator_info axp803_regulators[] = {
 	[AXP803_REGL_DCDC1] = {
 		.enable_register = OUTPUT_POWER_CONTROL1,
 		.enable_mask     = BIT(0),
@@ -154,56 +143,12 @@ static const struct axp803_regulator_info axp803_regulators[] = {
 	},
 };
 
-static int
-axp803_regulator_get_state(const struct device *dev UNUSED, uint8_t id)
-{
-	const struct regmap *map = &axp803.map;
-	uint8_t reg  = axp803_regulators[id].enable_register;
-	uint8_t mask = axp803_regulators[id].enable_mask;
-	uint8_t val;
-	int err;
-
-	if ((err = regmap_read(map, reg, &val)))
-		return err;
-
-	/* GPIO LDOs have a pin function, not an enable bit. */
-	if (id >= AXP803_REGL_GPIO0)
-		return (val & mask) == GPIO_LDO_ON;
-
-	return !!(val & mask);
-}
-
-static int
-axp803_regulator_set_state(const struct device *dev UNUSED, uint8_t id,
-                           bool enabled)
-{
-	const struct regmap *map = &axp803.map;
-	uint8_t reg  = axp803_regulators[id].enable_register;
-	uint8_t mask = axp803_regulators[id].enable_mask;
-	uint8_t val;
-
-	/* GPIO LDOs have a pin function, not an enable bit. */
-	if (id >= AXP803_REGL_GPIO0)
-		val = enabled ? GPIO_LDO_ON : GPIO_LDO_OFF;
-	else
-		val = enabled ? mask : 0;
-
-	return regmap_update_bits(map, reg, mask, val);
-}
-
-static const struct regulator_driver axp803_regulator_driver = {
-	.drv = {
-		.probe   = axp803_subdevice_probe,
-		.release = axp803_subdevice_release,
+const struct axp20x_regulator axp803_regulator = {
+	.dev = {
+		.name  = "axp803-regulator",
+		.drv   = &axp20x_regulator_driver.drv,
+		.state = DEVICE_STATE_INIT,
 	},
-	.ops = {
-		.get_state = axp803_regulator_get_state,
-		.set_state = axp803_regulator_set_state,
-	},
-};
-
-const struct device axp803_regulator = {
-	.name  = "axp803-regulator",
-	.drv   = &axp803_regulator_driver.drv,
-	.state = DEVICE_STATE_INIT,
+	.map  = &axp20x.map,
+	.info = axp803_regulators,
 };
